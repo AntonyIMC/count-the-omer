@@ -8,7 +8,8 @@ export async function GET() {
     const images = blobs
       .filter((b) => b.pathname.match(/\.(jpg|jpeg|png|webp)$/i))
       .map((b) => ({
-        url: b.url,
+        // Use downloadUrl for private stores, url for public
+        url: b.downloadUrl || b.url,
         name: b.pathname.replace("omer-images/", ""),
       }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));

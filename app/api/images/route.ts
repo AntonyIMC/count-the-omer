@@ -5,6 +5,9 @@ const ADMIN_TOKEN =
   process.env.ADMIN_TOKEN ||
   "ab59c269fbb4ff177f2972b2b401e220a0b99433528e063c";
 
+// Set BLOB_ACCESS=private in env if your store is private
+const BLOB_ACCESS = (process.env.BLOB_ACCESS || "public") as "public" | "private";
+
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
@@ -25,6 +28,7 @@ export async function GET(req: NextRequest) {
     .filter((b) => b.pathname.match(/\.(jpg|jpeg|png|webp)$/i))
     .map((b) => ({
       url: b.url,
+      downloadUrl: b.downloadUrl,
       pathname: b.pathname,
       name: b.pathname.replace("omer-images/", ""),
       size: b.size,
@@ -52,10 +56,9 @@ export async function POST(req: NextRequest) {
 
     const uploaded = [];
     for (const file of files) {
-      // Convert File to ArrayBuffer for Vercel Blob
       const arrayBuffer = await file.arrayBuffer();
       const blob = await put(`omer-images/${file.name}`, arrayBuffer, {
-        access: "public",
+        access: BLOB_ACCESS,
         addRandomSuffix: false,
         contentType: file.type || "image/jpeg",
       });
