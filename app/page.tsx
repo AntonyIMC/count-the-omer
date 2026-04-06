@@ -26,27 +26,10 @@ const HEBREW_DAYS = [
   "מא", "מב", "מג", "מד", "מה", "מו", "מז", "מח", "מט",
 ];
 
-const TOTAL_IMAGES = 15;
-
-function getImageSrc(index: number): string {
-  const imgNum = ((index - 1) % TOTAL_IMAGES) + 1;
-  return `/images/omer-${imgNum}.jpg`;
-}
-
-function getPlaceholderSrc(index: number): string {
-  const colors = [
-    "1a1a2e/e6b800", "16213e/e6b800", "0f3460/e6b800",
-    "1a1a2e/ff6b6b", "16213e/00d2ff", "2d1b69/e6b800",
-    "1b2838/e6b800", "0d1117/e6b800", "1e3a5f/e6b800",
-    "2c003e/e6b800", "1a1a2e/ffd700", "0b1929/e6b800",
-    "1c1c3c/e6b800", "0e2439/e6b800", "1f0833/e6b800",
-  ];
-  const colorPair = colors[(index - 1) % colors.length];
-  return `https://placehold.co/300x300/${colorPair}?text=Omer+${index}&font=montserrat`;
-}
+const LOCAL_IMAGE_COUNT = 15;
 
 interface OmerState {
-  day: number; // 0 = not during omer, 1-49 = current day
+  day: number;
   status: "before" | "during" | "after";
   nextStart?: string;
 }
@@ -55,10 +38,6 @@ function getOmerState(): OmerState {
   const now = new Date();
   const year = now.getFullYear();
 
-  // Approximate sunset at 18:00 local time
-  const hour = now.getHours();
-
-  // Check current year and next year
   for (const checkYear of [year, year + 1]) {
     const startDateStr = OMER_START_DATES[checkYear];
     if (!startDateStr) continue;
@@ -68,15 +47,10 @@ function getOmerState(): OmerState {
     endDate.setDate(endDate.getDate() + 49);
 
     if (now < startDate) {
-      return {
-        status: "before",
-        day: 0,
-        nextStart: startDateStr,
-      };
+      return { status: "before", day: 0, nextStart: startDateStr };
     }
 
     if (now >= startDate && now < endDate) {
-      // Calculate which day we're on
       const msElapsed = now.getTime() - startDate.getTime();
       const daysElapsed = Math.floor(msElapsed / (24 * 60 * 60 * 1000));
       const day = Math.min(daysElapsed + 1, 49);
@@ -84,14 +58,9 @@ function getOmerState(): OmerState {
     }
   }
 
-  // After this year's omer, find next year's start
   const nextYear = year + 1;
   const nextStart = OMER_START_DATES[nextYear];
-  return {
-    status: "after",
-    day: 0,
-    nextStart: nextStart || undefined,
-  };
+  return { status: "after", day: 0, nextStart: nextStart || undefined };
 }
 
 function getDaysUntil(dateStr: string): number {
@@ -101,40 +70,72 @@ function getDaysUntil(dateStr: string): number {
   return Math.max(0, Math.ceil(diff / (24 * 60 * 60 * 1000)));
 }
 
-function ImageWithFallback({
+function getPlaceholderSrc(index: number): string {
+  const colors = [
+    "1a1a2e/e6b800", "16213e/e6b800", "0f3460/e6b800",
+    "1a1a2e/ff6b6b", "16213e/00d2ff", "2d1b69/e6b800",
+    "1b2838/e6b800", "0d1117/e6b800", "1e3a5f/e6b800",
+    "2c003e/e6b800",
+  ];
+  const colorPair = colors[(index - 1) % colors.length];
+  return `https://placehold.co/300x300/${colorPair}?text=Omer+${index}&font=montserrat`;
+}
+
+function OmerImage({
   index,
-  ...props
-}: { index: number } & React.ImgHTMLAttributes<HTMLImageElement>) {
-  const [src, setSrc] = useState(getImageSrc(index));
+  blobImages,
+  className,
+}: {
+  index: number;
+  blobImages: string[];
+  className?: string;
+}) {
   const [errored, setErrored] = useState(false);
 
-  useEffect(() => {
-    setSrc(getImageSrc(index));
-    setErrored(false);
-  }, [index]);
+  // Pick image: cycle through blob images if available, else local files
+  const src = (() => {
+    if (errored) return getPlaceholderSrc(index);
+    if (blobImages.length > 0) {
+      return blobImages[(index - 1) % blobImages.length];
+    }
+    const imgNum = ((index - 1) % LOCAL_IMAGE_COUNT) + 1;
+    return `/images/omer-${imgNum}.jpg`;
+  })();
 
   return (
     <img
-      {...props}
-      src={errored ? getPlaceholderSrc(index) : src}
+      src={src}
       onError={() => {
-        if (!errored) {
-          setErrored(true);
-          setSrc(getPlaceholderSrc(index));
-        }
+        if (!errored) setErrored(true);
       }}
       alt={`Omer ${index}`}
+      className={className}
     />
   );
 }
 
 export default function Home() {
   const [omer, setOmer] = useState<OmerState | null>(null);
+  const [blobImages, setBlobImages] = useState<string[]>([]);
 
   useEffect(() => {
     setOmer(getOmerState());
     const interval = setInterval(() => setOmer(getOmerState()), 60000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Fetch images from blob storage
+  useEffect(() => {
+    fetch("/api/images/public")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.images && data.images.length > 0) {
+          setBlobImages(data.images.map((i: { url: string }) => i.url));
+        }
+      })
+      .catch(() => {
+        // Silently fall back to local images
+      });
   }, []);
 
   if (!omer) {
@@ -150,8 +151,9 @@ export default function Home() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
         <div className="mb-8">
-          <ImageWithFallback
+          <OmerImage
             index={1}
+            blobImages={blobImages}
             className="mx-auto h-48 w-48 rounded-full object-cover grayscale opacity-60"
           />
         </div>
@@ -177,12 +179,10 @@ export default function Home() {
     );
   }
 
-  // During the Omer — show the grid!
   const days = Array.from({ length: omer.day }, (_, i) => i + 1);
 
   return (
     <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
-      {/* Header */}
       <header className="mx-auto mb-10 max-w-3xl text-center">
         <h1 className="text-4xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-5xl">
           Count the Omer 🔢
@@ -195,7 +195,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Grid of Omer Adams */}
       <div className="mx-auto max-w-5xl">
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
           {days.map((day) => (
@@ -204,8 +203,9 @@ export default function Home() {
               className="group flex flex-col items-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-neutral-200 transition-transform hover:scale-105 dark:bg-neutral-900 dark:ring-neutral-800"
             >
               <div className="aspect-square w-full overflow-hidden">
-                <ImageWithFallback
+                <OmerImage
                   index={day}
+                  blobImages={blobImages}
                   className="h-full w-full object-cover transition-transform group-hover:scale-110"
                 />
               </div>
@@ -222,7 +222,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="mx-auto mt-12 max-w-3xl text-center">
         <p className="text-xs text-neutral-300 dark:text-neutral-600">
           Powered by Omer Adam · Not affiliated with the real Omer Adam (but
